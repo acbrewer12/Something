@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FH6 Tuner — Forza Horizon 6 Tune Calculator",
+  title: "QuickTune Pro — Forza Horizon 6 Tune Calculator",
   description: "Calculate and save car tunes for Forza Horizon 6",
 };
 

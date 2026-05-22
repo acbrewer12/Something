@@ -63,7 +63,7 @@ export default function Home() {
               FH6
             </div>
             <div>
-              <h1 className="text-base font-bold leading-tight">FH6 Tuner</h1>
+              <h1 className="text-base font-bold leading-tight">QuickTune Pro</h1>
               <p className="text-xs text-slate-400">Forza Horizon 6 Tune Calculator</p>
             </div>
           </div>

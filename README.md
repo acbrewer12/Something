@@ -1,5 +1,5 @@
 ---
-title: FH6 Tuner
+title: QuickTune Pro
 emoji: 🏎️
 colorFrom: blue
 colorTo: indigo
@@ -8,7 +8,7 @@ pinned: false
 app_port: 7860
 ---
 
-# FH6 Tuner — Forza Horizon 6 Tune Calculator
+# QuickTune Pro — Forza Horizon 6 Tune Calculator
 
 A full-stack web app that calculates recommended car tunes for Forza Horizon 6 based on your car's stats and installed parts.
 
