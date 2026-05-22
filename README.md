@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+---
+title: FH6 Tuner
+emoji: 🏎️
+colorFrom: cyan
+colorTo: blue
+sdk: docker
+pinned: false
+app_port: 7860
+---
 
-## Getting Started
+# FH6 Tuner — Forza Horizon 6 Tune Calculator
 
-First, run the development server:
+A full-stack web app that calculates recommended car tunes for Forza Horizon 6 based on your car's stats and installed parts.
+
+## Features
+
+- **Auto-calculated tunes** from weight, power, drivetrain, PI class, track type, and driving style
+- **Part-aware**: tire compound, springs, dampers, ARB, aero (with downforce sliders), and differential all affect results
+- **All four tuning categories**: Tires & Alignment, Suspension & ARB, Differential, Brakes
+- **Save & load tunes** via SQLite (note: resets on container restart on free Spaces)
+
+## Running locally
 
 ```bash
+npm install
+npx prisma migrate dev
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.

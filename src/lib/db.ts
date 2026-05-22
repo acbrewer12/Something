@@ -2,7 +2,10 @@ import { PrismaClient } from "@/generated/prisma/client";
 import { PrismaBetterSqlite3 } from "@prisma/adapter-better-sqlite3";
 import path from "path";
 
-const dbPath = path.join(process.cwd(), "prisma", "dev.db");
+// DATABASE_URL env var takes precedence (Docker/production); strip the "file:" prefix
+const dbPath = process.env.DATABASE_URL
+  ? process.env.DATABASE_URL.replace(/^file:/, "")
+  : path.join(process.cwd(), "prisma", "dev.db");
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
