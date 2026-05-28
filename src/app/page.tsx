@@ -10,6 +10,8 @@ import SavedTunes from "@/components/SavedTunes";
 import { calculateTune } from "@/lib/tuner";
 import { getBuildWarnings } from "@/lib/warnings";
 import { getPerformanceRatings } from "@/lib/ratings";
+import { saveTune } from "@/lib/storage";
+import type { StoredTune } from "@/lib/storage";
 import type { CarInfo, Upgrades, TuneContext, TuneResult } from "@/lib/tuner";
 import type { PerformanceRatings } from "@/lib/ratings";
 import type { Warning } from "@/lib/warnings";
@@ -163,20 +165,21 @@ export default function Home() {
     }
   }
 
-  async function handleSave() {
+  function handleSave() {
     if (!results) return;
-    try {
-      await fetch("/api/tunes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: car.name || "Untitled Tune", car, upgrades, context }),
-      });
-      setSaved(true);
-      setSavedKey((k) => k + 1);
-      showToast("Tune saved!");
-    } catch {
-      showToast("Failed to save.");
-    }
+    saveTune({
+      name:       car.name || "Untitled Tune",
+      carName:    car.name,
+      piClass:    car.piClass,
+      drivetrain: car.drivetrain,
+      tuneType:   context.tuneType,
+      weather:    context.weather,
+      season:     context.season,
+      results,
+    });
+    setSaved(true);
+    setSavedKey((k) => k + 1);
+    showToast("Tune saved!");
   }
 
   function handleShare() {
@@ -246,9 +249,9 @@ export default function Home() {
             <h2 className="text-base font-bold mb-4">Saved Tunes</h2>
             <SavedTunes
               refreshKey={savedKey}
-              onLoad={(tune) => {
+              onLoad={(tune: StoredTune) => {
                 setResults(tune.results);
-                const c2 = { ...DEFAULT_CAR, drivetrain: tune.drivetrain as CarInfo["drivetrain"] };
+                const c2: CarInfo = { ...DEFAULT_CAR, drivetrain: tune.drivetrain as CarInfo["drivetrain"] };
                 setCar(c2);
                 setRatings(getPerformanceRatings(c2, DEFAULT_UPGRADES, DEFAULT_CONTEXT));
                 setWarnings([]);
