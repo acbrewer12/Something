@@ -76,13 +76,27 @@ export interface Upgrades {
   rearDownforce: number;  // 0–100
 }
 
+export type EngineLocation = "front" | "mid" | "rear";
+export type Balance = "understeer" | "neutral" | "oversteer";
+export type Units = "imperial" | "metric";
+
 export interface CarInfo {
   name: string;
   piClass: PIClass;
-  weight: number;    // lbs
-  power: number;     // hp
+  weight: number;          // lbs
+  power: number;           // hp
+  torque: number;          // lb-ft
   drivetrain: Drivetrain;
-  frontDist: number; // 0–100%
+  engineLocation: EngineLocation;
+  frontDist: number;       // 0–100%
+  gearCount: number;       // 3–10
+  balance: Balance;
+  units: Units;
+}
+
+export interface RangeValue {
+  min: number;
+  max: number;
 }
 
 export interface TuneContext {
@@ -103,10 +117,10 @@ export interface TireResult {
 }
 
 export interface SuspensionResult {
-  springFront: number;
-  springRear: number;
-  rideHeightFront: number;
-  rideHeightRear: number;
+  springFront: RangeValue;      // lbs/in range
+  springRear: RangeValue;
+  rideHeightFront: RangeValue;  // cm range
+  rideHeightRear: RangeValue;
   bumpFront: number;
   bumpRear: number;
   reboundFront: number;
@@ -128,11 +142,17 @@ export interface BrakeResult {
   pressure: number;
 }
 
+export interface AeroRangeResult {
+  front?: RangeValue;  // % of slider
+  rear?: RangeValue;
+}
+
 export interface TuneResult {
   tires: TireResult;
   suspension: SuspensionResult;
   diff: DiffResult;
   brakes: BrakeResult;
+  aero: AeroRangeResult;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -156,7 +176,7 @@ export function calculateTune(
   upgrades: Upgrades,
   context: TuneContext
 ): TuneResult {
-  const { weight, frontDist, power, drivetrain } = car;
+  const { weight, frontDist, power, torque, drivetrain, engineLocation, balance: balancePref } = car;
   const { tuneType, season, weather } = context;
   const rearDist = 100 - frontDist;
 
@@ -264,63 +284,77 @@ export function calculateTune(
   else if (isOffRoad) caster = 6.0;
   else                caster = 5.5;
 
-  // ── Springs ───────────────────────────────────────────────────────────────
-  const springStiffnessFactor: Record<SpringUpgrade, number> = {
-    stock: 0.60, sport: 0.75, race: 0.95, rally: 0.70, drift: 1.05,
-  };
-  const sf = springStiffnessFactor[upgrades.springs];
+  // ── Springs (range: min–max lbs/in based on total weight, like forza.tools) ─
+  // Range formula: weight × [0.104 – 0.518] is the universal starting envelope.
+  // Tune type and engine location shift the envelope; balance shifts front/rear split.
+  const torqueFactor = clamp(torque / 600, 0, 1);
+  const elRearBias = engineLocation === "rear" ? 0.12 : engineLocation === "mid" ? 0.06 : 0;
 
-  const downforceFront = upgrades.aeroFront !== "none" ? upgrades.frontDownforce / 100 : 0;
-  const downforceRear  = upgrades.aeroRear  !== "none" ? upgrades.rearDownforce  / 100 : 0;
-
-  // +12 per 10% downforce
-  let springFrontRaw = frontCornerWeight * sf * 0.38 + downforceFront * 120;
-  let springRearRaw  = rearCornerWeight  * sf * 0.38 + downforceRear  * 120;
+  let minF = 0.104, maxF = 0.518; // front factors
+  let minR = 0.104 * (1 + elRearBias), maxR = 0.518 * (1 + elRearBias); // rear factors
 
   if (isDrag) {
-    springFrontRaw *= 0.55;
-    springRearRaw  *= 1.45;
-  } else if (isOffRoad) {
-    springFrontRaw *= 0.80;
-    springRearRaw  *= 0.80;
-  }
-
-  if (isSnowIce) {
-    springFrontRaw *= 0.75;
-    springRearRaw  *= 0.75;
-  }
-
-  const springFront = round0(clamp(springFrontRaw, 80, 2500));
-  const springRear  = round0(clamp(springRearRaw,  80, 2500));
-
-  // ── Ride Height ───────────────────────────────────────────────────────────
-  let rideHeightFront: number;
-  let rideHeightRear: number;
-
-  if (isDrag) {
-    rideHeightFront = 7;
-    rideHeightRear  = 9;
+    // Front very soft (weight transfer), rear stiff + extra from torque
+    minF *= 0.55; maxF *= 0.55;
+    minR *= 1.40 + torqueFactor * 0.20;
+    maxR *= 1.40 + torqueFactor * 0.20;
   } else if (isDrift) {
-    rideHeightFront = 9;
-    rideHeightRear  = 10;
+    minF *= 1.15; maxF *= 1.15;
+    minR *= 1.25; maxR *= 1.25;
   } else if (tuneType === "cross-country") {
-    rideHeightFront = 22;
-    rideHeightRear  = 24;
+    minF *= 0.55; maxF *= 0.55;
+    minR *= 0.55; maxR *= 0.55;
+  } else if (isOffRoad) {
+    minF *= 0.65; maxF *= 0.65;
+    minR *= 0.65; maxR *= 0.65;
+  }
+
+  if (isSnowIce) { minF *= 0.75; maxF *= 0.75; minR *= 0.75; maxR *= 0.75; }
+
+  // Balance shifts the split slightly
+  const balBias = balancePref === "oversteer" ? 0.08 : balancePref === "understeer" ? -0.08 : 0;
+  minR *= (1 + balBias); maxR *= (1 + balBias);
+  minF *= (1 - balBias); maxF *= (1 - balBias);
+
+  const springFront: RangeValue = {
+    min: round1(clamp(weight * minF, 80, 2500)),
+    max: round1(clamp(weight * maxF, 80, 2500)),
+  };
+  const springRear: RangeValue = {
+    min: round1(clamp(weight * minR, 80, 2500)),
+    max: round1(clamp(weight * maxR, 80, 2500)),
+  };
+
+  // Use midpoint for damper calculations
+  const springFrontMid = (springFront.min + springFront.max) / 2;
+  const springRearMid  = (springRear.min  + springRear.max)  / 2;
+
+  // ── Ride Height (range, cm) ───────────────────────────────────────────────
+  // Centers match forza.tools: drag front 7.4, rear 6.5 (rear lower for squat)
+  let rhCenterF: number, rhCenterR: number, rhHalf: number;
+
+  if (isDrag) {
+    rhCenterF = 7.4; rhCenterR = 6.5; rhHalf = 1.3;
+  } else if (isDrift) {
+    rhCenterF = 9.0; rhCenterR = 10.0; rhHalf = 2.0;
+  } else if (tuneType === "cross-country") {
+    rhCenterF = 22.0; rhCenterR = 24.0; rhHalf = 3.5;
   } else if (tuneType === "dirt") {
-    rideHeightFront = 18;
-    rideHeightRear  = 20;
+    rhCenterF = 18.0; rhCenterR = 20.0; rhHalf = 3.0;
   } else {
-    rideHeightFront = 10;
-    rideHeightRear  = 11;
+    rhCenterF = 10.0; rhCenterR = 11.0; rhHalf = 2.0;
   }
 
-  if (isSnowIce) {
-    rideHeightFront += 3;
-    rideHeightRear  += 3;
-  }
+  if (isSnowIce) { rhCenterF += 3; rhCenterR += 3; }
 
-  rideHeightFront = clamp(rideHeightFront, 6, 50);
-  rideHeightRear  = clamp(rideHeightRear,  6, 50);
+  const rideHeightFront: RangeValue = {
+    min: round1(clamp(rhCenterF - rhHalf, 6, 50)),
+    max: round1(clamp(rhCenterF + rhHalf, 6, 50)),
+  };
+  const rideHeightRear: RangeValue = {
+    min: round1(clamp(rhCenterR - rhHalf, 6, 50)),
+    max: round1(clamp(rhCenterR + rhHalf, 6, 50)),
+  };
 
   // ── Dampers ───────────────────────────────────────────────────────────────
   const damperQualityMap: Record<DamperUpgrade, number> = {
@@ -328,8 +362,8 @@ export function calculateTune(
   };
   const dq = damperQualityMap[upgrades.dampers];
 
-  const bumpFrontRaw = (springFront / 300) * dq;
-  const bumpRearRaw  = (springRear  / 300) * dq;
+  const bumpFrontRaw = (springFrontMid / 300) * dq;
+  const bumpRearRaw  = (springRearMid  / 300) * dq;
 
   // Rebound ratios per tune type
   let reboundRatioFront: number;
@@ -401,8 +435,10 @@ export function calculateTune(
     arbRearRaw  *= 0.55;
   }
 
-  const arbFront = round0(clamp(arbFrontRaw, 1, 65));
-  const arbRear  = round0(clamp(arbRearRaw,  1, 65));
+  // Balance preference skews ARB split (oversteer = stiffer front ARB)
+  const arbBalBias = balancePref === "oversteer" ? 1.10 : balancePref === "understeer" ? 0.90 : 1.0;
+  const arbFront = round0(clamp(arbFrontRaw * arbBalBias, 1, 65));
+  const arbRear  = round0(clamp(arbRearRaw  / arbBalBias, 1, 65));
 
   // ── Differential ─────────────────────────────────────────────────────────
   const hasDiff = upgrades.differential !== "stock";
@@ -472,6 +508,30 @@ export function calculateTune(
   }
   pressure = clamp(pressure, 70, 200);
 
+  // ── Aero recommended % ranges ─────────────────────────────────────────────
+  const hasAeroF = upgrades.aeroFront !== "none";
+  const hasAeroR = upgrades.aeroRear  !== "none";
+
+  let aeroFMin = 30, aeroFMax = 70, aeroRMin = 50, aeroRMax = 85;
+  if (isDrag)  { aeroFMin = 0;  aeroFMax = 20;  aeroRMin = 70; aeroRMax = 100; }
+  if (isDrift) { aeroFMin = 35; aeroFMax = 75;  aeroRMin = 55; aeroRMax = 90;  }
+  if (isOffRoad){ aeroFMin = 20; aeroFMax = 55; aeroRMin = 40; aeroRMax = 75;  }
+
+  // Balance shifts which end gets more downforce
+  const aeroBias = balancePref === "oversteer" ? 10 : balancePref === "understeer" ? -10 : 0;
+  aeroFMin = clamp(aeroFMin + aeroBias, 0, 100);
+  aeroFMax = clamp(aeroFMax + aeroBias, 0, 100);
+  aeroRMin = clamp(aeroRMin - aeroBias, 0, 100);
+  aeroRMax = clamp(aeroRMax - aeroBias, 0, 100);
+
+  const aero: AeroRangeResult = {
+    ...(hasAeroF ? { front: { min: aeroFMin, max: aeroFMax } } : {}),
+    ...(hasAeroR ? { rear:  { min: aeroRMin, max: aeroRMax } } : {}),
+  };
+
+  // Balance nudges brake bias
+  const brakeBalBias = balancePref === "understeer" ? 3 : balancePref === "oversteer" ? -3 : 0;
+
   return {
     tires: {
       pressureFront: round1(pressureFront),
@@ -489,6 +549,7 @@ export function calculateTune(
       arbFront, arbRear,
     },
     diff: { frontAccel, frontDecel, rearAccel, rearDecel, centerBalance },
-    brakes: { balance, pressure },
+    brakes: { balance: clamp(balance + brakeBalBias, 40, 75), pressure },
+    aero,
   };
 }

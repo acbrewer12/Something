@@ -1,7 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import PerformanceGauge from "./PerformanceGauge";
-import type { TuneResult } from "@/lib/tuner";
+import type { TuneResult, RangeValue, Units } from "@/lib/tuner";
 import type { PerformanceRatings } from "@/lib/ratings";
 import type { Warning } from "@/lib/warnings";
 
@@ -10,13 +11,27 @@ interface Props {
   ratings: PerformanceRatings;
   warnings: Warning[];
   drivetrain: string;
+  units: Units;
   hasDiff: boolean;
   onBack: () => void;
   onSave: () => void;
+  onShare: () => void;
   saved: boolean;
 }
 
-// ── Helper components ──────────────────────────────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+function fmtSpring(v: number, units: Units) {
+  if (units === "metric") return `${Math.round(v * 0.175)} kgf/mm`;
+  return `${v} lb/in`;
+}
+
+function fmtPressure(v: number, units: Units) {
+  if (units === "metric") return `${Math.round(v * 6.895)} kPa`;
+  return `${v} PSI`;
+}
+
+// ── Sub-components ──────────────────────────────────────────────────────────
 
 function StatRow({ label, value, unit }: { label: string; value: number | string; unit?: string }) {
   return (
@@ -30,15 +45,20 @@ function StatRow({ label, value, unit }: { label: string; value: number | string
   );
 }
 
-function ResultSection({
-  title,
-  color,
-  children,
-}: {
-  title: string;
-  color: string;
-  children: React.ReactNode;
-}) {
+function RangeRow({ label, range, fmt }: { label: string; range: RangeValue; fmt: (v: number) => string }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-slate-700/50 last:border-0">
+      <span className="text-xs text-slate-400">{label}</span>
+      <span className="text-sm font-bold">
+        <span className="text-cyan-400">{fmt(range.min)}</span>
+        <span className="text-slate-500 mx-1 font-normal">–</span>
+        <span className="text-cyan-400">{fmt(range.max)}</span>
+      </span>
+    </div>
+  );
+}
+
+function ResultSection({ title, color, children }: { title: string; color: string; children: React.ReactNode }) {
   return (
     <div className="bg-slate-800/50 rounded-xl p-4 border border-slate-700">
       <h3 className={`text-xs font-bold uppercase tracking-wider mb-3 ${color}`}>{title}</h3>
@@ -53,19 +73,23 @@ const WARNING_STYLES: Record<Warning["level"], { icon: string; bg: string; text:
   info:  { icon: "🔵", bg: "bg-blue-950/50",   text: "text-blue-300",   border: "border-blue-800/60" },
 };
 
-// ── Main Component ─────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────────
 
 export default function ResultsStep({
-  results,
-  ratings,
-  warnings,
-  drivetrain,
-  hasDiff,
-  onBack,
-  onSave,
-  saved,
+  results, ratings, warnings, drivetrain, units, hasDiff,
+  onBack, onSave, onShare, saved,
 }: Props) {
-  const { tires, suspension, diff, brakes } = results;
+  const { tires, suspension, diff, brakes, aero } = results;
+  const [shareCopied, setShareCopied] = useState(false);
+
+  function handleShare() {
+    onShare();
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2000);
+  }
+
+  const sp = (v: number) => fmtSpring(v, units);
+  const pr = (v: number) => fmtPressure(v, units);
 
   return (
     <div className="space-y-5">
@@ -74,17 +98,12 @@ export default function ResultsStep({
         <div className="flex items-start justify-between mb-4">
           <h3 className="text-xs font-bold uppercase tracking-wider text-cyan-400">Performance</h3>
           <div className="flex flex-col items-center">
-            <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-lg border-2 ${
-                ratings.overall >= 80
-                  ? "border-green-500 text-green-400 bg-green-500/10"
-                  : ratings.overall >= 60
-                  ? "border-cyan-500 text-cyan-400 bg-cyan-500/10"
-                  : ratings.overall >= 40
-                  ? "border-yellow-500 text-yellow-400 bg-yellow-500/10"
-                  : "border-red-500 text-red-400 bg-red-500/10"
-              }`}
-            >
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center font-black text-lg border-2 ${
+              ratings.overall >= 80 ? "border-green-500 text-green-400 bg-green-500/10"
+              : ratings.overall >= 60 ? "border-cyan-500 text-cyan-400 bg-cyan-500/10"
+              : ratings.overall >= 40 ? "border-yellow-500 text-yellow-400 bg-yellow-500/10"
+              : "border-red-500 text-red-400 bg-red-500/10"
+            }`}>
               {ratings.overall}
             </div>
             <span className="text-[10px] text-slate-500 mt-1">Overall</span>
@@ -106,10 +125,7 @@ export default function ResultsStep({
           {warnings.map((w, i) => {
             const style = WARNING_STYLES[w.level];
             return (
-              <div
-                key={i}
-                className={`flex gap-2.5 items-start px-3 py-2.5 rounded-lg border ${style.bg} ${style.border}`}
-              >
+              <div key={i} className={`flex gap-2.5 items-start px-3 py-2.5 rounded-lg border ${style.bg} ${style.border}`}>
                 <span className="text-sm leading-tight mt-px shrink-0">{style.icon}</span>
                 <p className={`text-xs leading-relaxed ${style.text}`}>{w.message}</p>
               </div>
@@ -123,8 +139,8 @@ export default function ResultsStep({
         <div className="grid grid-cols-2 gap-x-6">
           <div>
             <p className="text-xs text-slate-500 font-semibold mb-1">Pressure</p>
-            <StatRow label="Front" value={tires.pressureFront} unit=" PSI" />
-            <StatRow label="Rear"  value={tires.pressureRear}  unit=" PSI" />
+            <StatRow label="Front" value={pr(tires.pressureFront)} />
+            <StatRow label="Rear"  value={pr(tires.pressureRear)} />
           </div>
           <div>
             <p className="text-xs text-slate-500 font-semibold mb-1">Alignment</p>
@@ -142,24 +158,35 @@ export default function ResultsStep({
         <div className="grid grid-cols-2 gap-x-6">
           <div>
             <p className="text-xs text-slate-500 font-semibold mb-1">Springs</p>
-            <StatRow label="Front" value={suspension.springFront} unit=" lb/in" />
-            <StatRow label="Rear"  value={suspension.springRear}  unit=" lb/in" />
+            <RangeRow label="Front" range={suspension.springFront} fmt={sp} />
+            <RangeRow label="Rear"  range={suspension.springRear}  fmt={sp} />
             <p className="text-xs text-slate-500 font-semibold mb-1 mt-2">Ride Height</p>
-            <StatRow label="Front" value={suspension.rideHeightFront} unit=" cm" />
-            <StatRow label="Rear"  value={suspension.rideHeightRear}  unit=" cm" />
+            <RangeRow label="Front" range={suspension.rideHeightFront} fmt={(v) => `${v} cm`} />
+            <RangeRow label="Rear"  range={suspension.rideHeightRear}  fmt={(v) => `${v} cm`} />
           </div>
           <div>
             <p className="text-xs text-slate-500 font-semibold mb-1">Damping</p>
-            <StatRow label="Bump F"     value={suspension.bumpFront}    />
-            <StatRow label="Bump R"     value={suspension.bumpRear}     />
-            <StatRow label="Rebound F"  value={suspension.reboundFront} />
-            <StatRow label="Rebound R"  value={suspension.reboundRear}  />
+            <StatRow label="Bump F"    value={suspension.bumpFront}    />
+            <StatRow label="Bump R"    value={suspension.bumpRear}     />
+            <StatRow label="Rebound F" value={suspension.reboundFront} />
+            <StatRow label="Rebound R" value={suspension.reboundRear}  />
             <p className="text-xs text-slate-500 font-semibold mb-1 mt-2">Anti-Roll Bars</p>
             <StatRow label="Front" value={suspension.arbFront} />
             <StatRow label="Rear"  value={suspension.arbRear}  />
           </div>
         </div>
       </ResultSection>
+
+      {/* ── Aero ── */}
+      {(aero.front || aero.rear) && (
+        <ResultSection title="Aero Downforce" color="text-sky-400">
+          <p className="text-[10px] text-slate-500 mb-2">Recommended % of slider range</p>
+          <div className="grid grid-cols-2 gap-x-6">
+            {aero.front && <RangeRow label="Front" range={aero.front} fmt={(v) => `${v}%`} />}
+            {aero.rear  && <RangeRow label="Rear"  range={aero.rear}  fmt={(v) => `${v}%`} />}
+          </div>
+        </ResultSection>
+      )}
 
       {/* ── Differential ── */}
       {hasDiff && (
@@ -168,15 +195,15 @@ export default function ResultsStep({
             {(drivetrain === "FWD" || drivetrain === "AWD") && (
               <div>
                 <p className="text-xs text-slate-500 font-semibold mb-1">Front Diff</p>
-                <StatRow label="Acceleration" value={diff.frontAccel} unit="%" />
-                <StatRow label="Deceleration" value={diff.frontDecel} unit="%" />
+                <StatRow label="Accel" value={diff.frontAccel} unit="%" />
+                <StatRow label="Decel" value={diff.frontDecel} unit="%" />
               </div>
             )}
             {(drivetrain === "RWD" || drivetrain === "AWD") && (
               <div>
                 <p className="text-xs text-slate-500 font-semibold mb-1">Rear Diff</p>
-                <StatRow label="Acceleration" value={diff.rearAccel} unit="%" />
-                <StatRow label="Deceleration" value={diff.rearDecel} unit="%" />
+                <StatRow label="Accel" value={diff.rearAccel} unit="%" />
+                <StatRow label="Decel" value={diff.rearDecel} unit="%" />
               </div>
             )}
             {drivetrain === "AWD" && (
@@ -200,6 +227,12 @@ export default function ResultsStep({
       {/* ── Actions ── */}
       <div className="flex gap-3 pt-2">
         <button
+          onClick={handleShare}
+          className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 font-bold py-3 rounded-xl text-sm transition-colors"
+        >
+          {shareCopied ? "✓ Copied!" : "🔗 Share"}
+        </button>
+        <button
           onClick={onBack}
           className="flex-1 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-300 font-bold py-3 rounded-xl text-sm transition-colors"
         >
@@ -209,12 +242,10 @@ export default function ResultsStep({
           onClick={onSave}
           disabled={saved}
           className={`flex-1 font-bold py-3 rounded-xl text-sm uppercase tracking-widest transition-colors ${
-            saved
-              ? "bg-green-700/60 text-green-300 cursor-default"
-              : "bg-cyan-500 hover:bg-cyan-400 text-black"
+            saved ? "bg-green-700/60 text-green-300 cursor-default" : "bg-cyan-500 hover:bg-cyan-400 text-black"
           }`}
         >
-          {saved ? "Saved!" : "Save Tune"}
+          {saved ? "Saved!" : "Save"}
         </button>
       </div>
     </div>
